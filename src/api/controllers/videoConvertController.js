@@ -6,6 +6,16 @@ import axios from "axios";
 import fs from "fs";
 import path from "path";
 
+import { PrismaClient } from "@prisma/client";
+const prisma = new PrismaClient();
+
+import admin from "firebase-admin";
+import serviceAccount from "../../../gcloud_service_account.json" assert { type: "json" };
+
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+});
+
 const replicate = new Replicate({ auth: process.env.REPLICATE_API_TOKEN });
 const exec = promisify(execCallback);
 
@@ -44,15 +54,25 @@ export const handleVideoConvertByRVC = async (req, res, next) => {
           console.error(`stderr: ${stderr}`);
           return;
         }
+        const model = params.model || "Squidward";
+
+        const data = {
+          deviceId: params.deviceId,
+          deviceToken: params.deviceToken,
+          model: model,
+          title: info.title,
+          videoId: info.id,
+        };
+        await saveDataToDatabase(data);
 
         await replicate.predictions.create({
           version:
             "0a9c7c558af4c0f20667c1bd1260ce32a2879944a0b9e44e1398660c077b1550",
           input: {
             song_input: `${process.env.APP_DOMAIN}/downloads/${fileName}`,
-            rvc_model: 'Drake'
+            rvc_model: model,
           },
-          webhook: `${process.env.APP_DOMAIN}/webhooks/replicate`,
+          webhook: `${process.env.APP_DOMAIN}/webhooks/replicate?id=${info.id}&model=${model}&deviceToken=${params.deviceToken}`,
           webhook_events_filter: ["completed"],
         });
         success = true;
@@ -67,9 +87,24 @@ export const handleVideoConvertByRVC = async (req, res, next) => {
   });
 };
 
+async function saveDataToDatabase(data) {
+  try {
+    const videoConvert = await prisma.videoConvert.create({
+      data,
+    });
+    console.log("Saved video info:", videoConvert);
+    return videoConvert;
+  } catch (error) {
+    console.error("Failed to save video info:", error);
+    // Handle or throw error appropriately
+    throw error;
+  }
+}
+
 export const handleReplicateWebhook = async (req, res) => {
   try {
     const data = req.body; // Webhook data sent by Replicate
+    const { id, model, deviceToken } = req.query;
 
     switch (data.status) {
       case "succeeded":
@@ -83,22 +118,58 @@ export const handleReplicateWebhook = async (req, res) => {
 
         const outputPath = path.join(
           `${process.env.OUTPUT_DIR}`,
-          "outputFile.wav"
+          `${id}_${model}.mp3`
         );
         const writer = fs.createWriteStream(outputPath);
 
         response.data.pipe(writer);
-        console.log(`Output successfully written to ${outputPath}`);
 
-        return new Promise((resolve, reject) => {
+        await new Promise((resolve, reject) => {
           writer.on("finish", resolve);
           writer.on("error", reject);
         });
+
+        console.log(`Output successfully written to ${outputPath}`);
+
+        // Send notification to deviceToken
+        const message = {
+          token: deviceToken,
+          notification: {
+            title: "File Ready",
+            body: "Your file has been processed and is ready for download.",
+          },
+        };
+
+        const responseFCM = await admin.messaging().send(message);
+        console.log("Successfully sent message:", responseFCM);
+
+        res.status(200).send("Webhook processed successfully.");
+        break;
       default:
         console.log("Webhook is listening...");
     }
   } catch (error) {
     console.error("Error handling Replicate webhook:", error);
+    res.status(500).send("Internal Server Error");
+  }
+};
+
+export const getVideoConvertList = async (req, res) => {
+  try {
+    const deviceId = req.query.deviceId;
+    if (!deviceId) {
+      return res.status(400).send("deviceId is required");
+    }
+
+    const videoConverts = await prisma.videoConvert.findMany({
+      where: {
+        deviceId: deviceId,
+      },
+    });
+
+    res.json(videoConverts);
+  } catch (error) {
+    console.error("Failed to fetch video converts:", error);
     res.status(500).send("Internal Server Error");
   }
 };
