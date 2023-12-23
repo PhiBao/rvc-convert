@@ -9,12 +9,17 @@ import path from "path";
 import { PrismaClient } from "@prisma/client";
 const prisma = new PrismaClient();
 
-import admin from "firebase-admin";
-import serviceAccount from "../../../gcloud_service_account.json" assert { type: "json" };
+// import admin from "firebase-admin";
+// import serviceAccount from "${process.env.FIREBASE_SERVICE_JSON_FILE_URL}" assert { type: "json" };
+// admin.initializeApp({
+//   credential: admin.credential.cert(serviceAccount),
+// });
 
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
+import { Storage } from "@google-cloud/storage";
+const storage = new Storage({
+  keyFilename: process.env.GCS_SERVICE_JSON_FILE_URL,
 });
+const bucketName = process.env.BUCKET_NAME;
 
 const replicate = new Replicate({ auth: process.env.REPLICATE_API_TOKEN });
 const exec = promisify(execCallback);
@@ -34,6 +39,24 @@ async function getYoutubeVideoInfo(url) {
   }
 }
 
+async function uploadFileToGCS(filePath, destination) {
+  const bucket = storage.bucket(bucketName);
+  const file = bucket.file(destination);
+
+  // Upload the file
+  await bucket.upload(filePath, {
+    destination: file,
+  });
+
+  // Make the file public
+  await file.makePublic();
+
+  // Return the public URL for the file
+  const publicUrl = `https://storage.googleapis.com/${bucketName}/${destination}`;
+  console.log(`${filePath} uploaded to ${publicUrl}`);
+  return publicUrl;
+}
+
 export const handleVideoConvertByRVC = async (req, res, next) => {
   const params = req.body;
   if (!params.url) {
@@ -44,7 +67,8 @@ export const handleVideoConvertByRVC = async (req, res, next) => {
     try {
       const outputDir = process.env.OUTPUT_DIR;
       const fileName = `${info.id}.mp3`;
-      const command = `yt-dlp --extract-audio --audio-format mp3 -o '${outputDir}/${fileName}' '${params.url}'`;
+      const outputPath = path.join(outputDir, fileName);
+      const command = `yt-dlp --extract-audio --audio-format mp3 -o '${outputPath}' '${params.url}'`;
       let success = false;
 
       try {
@@ -64,12 +88,16 @@ export const handleVideoConvertByRVC = async (req, res, next) => {
           videoId: info.id,
         };
         await saveDataToDatabase(data);
+        const gcsFileUrl = await uploadFileToGCS(outputPath, fileName);
+
+        // Once the file is uploaded, delete the local file
+        fs.unlinkSync(outputPath);
+        console.log(`Local file ${outputPath} deleted`);
 
         await replicate.predictions.create({
-          version:
-            "0a9c7c558af4c0f20667c1bd1260ce32a2879944a0b9e44e1398660c077b1550",
+          version: process.env.REPLICATE_VERSION,
           input: {
-            song_input: `${process.env.APP_DOMAIN}/downloads/${fileName}`,
+            song_input: gcsFileUrl,
             rvc_model: model,
           },
           webhook: `${process.env.APP_DOMAIN}/webhooks/replicate?id=${info.id}&model=${model}&deviceToken=${params.deviceToken}`,
@@ -116,34 +144,31 @@ export const handleReplicateWebhook = async (req, res) => {
           responseType: "stream",
         });
 
-        const outputPath = path.join(
-          `${process.env.OUTPUT_DIR}`,
-          `${id}_${model}.mp3`
-        );
-        const writer = fs.createWriteStream(outputPath);
+        const gcsFileName = `${id}_${model}.mp3`;
+        const file = storage.bucket(bucketName).file(gcsFileName);
 
-        response.data.pipe(writer);
-
-        await new Promise((resolve, reject) => {
-          writer.on("finish", resolve);
-          writer.on("error", reject);
-        });
-
-        console.log(`Output successfully written to ${outputPath}`);
-
-        // Send notification to deviceToken
-        const message = {
-          token: deviceToken,
-          notification: {
-            title: "File Ready",
-            body: "Your file has been processed and is ready for download.",
-          },
-        };
-
-        const responseFCM = await admin.messaging().send(message);
-        console.log("Successfully sent message:", responseFCM);
-
-        res.status(200).send("Webhook processed successfully.");
+        // Pipe the axios stream to the GCS file
+        response.data
+          .pipe(file.createWriteStream())
+          .on("finish", async () => {
+            console.log(`File uploaded to ${gcsFileName}`);
+            // Send notification to deviceToken
+            // const message = {
+            //   token: deviceToken,
+            //   notification: {
+            //     title: "File Ready",
+            //     body: "Your file has been processed and is ready for download.",
+            //   },
+            // };
+            // const responseFCM = await admin.messaging().send(message);
+            // console.log("Successfully sent message:", responseFCM);
+            res.status(200).send("Webhook processed successfully.");
+          })
+          .on("error", (err) => {
+            console.error("Failed to upload file:", err);
+            // Handle error appropriately
+            res.status(500).send("Failed to upload file");
+          });
         break;
       default:
         console.log("Webhook is listening...");
