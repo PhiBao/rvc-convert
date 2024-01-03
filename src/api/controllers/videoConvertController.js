@@ -9,17 +9,18 @@ import path from "path";
 import { PrismaClient } from "@prisma/client";
 const prisma = new PrismaClient();
 
-// import admin from "firebase-admin";
-// import serviceAccount from "${process.env.FIREBASE_SERVICE_JSON_FILE_URL}" assert { type: "json" };
-// admin.initializeApp({
-//   credential: admin.credential.cert(serviceAccount),
-// });
+import admin from "firebase-admin";
+import serviceAccount from "../../../firebase-service-account.json" assert { type: "json" };
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+});
 
 import { Storage } from "@google-cloud/storage";
 const storage = new Storage({
   keyFilename: process.env.GCS_SERVICE_JSON_FILE_URL,
 });
 const bucketName = process.env.BUCKET_NAME;
+const gcsPath = process.env.GCS_PATH;
 
 const replicate = new Replicate({ auth: process.env.REPLICATE_API_TOKEN });
 const exec = promisify(execCallback);
@@ -41,20 +42,28 @@ async function getYoutubeVideoInfo(url) {
 
 async function uploadFileToGCS(filePath, destination) {
   const bucket = storage.bucket(bucketName);
-  const file = bucket.file(destination);
+  const fullDestination = path.join(gcsPath, destination);
+  const file = bucket.file(fullDestination);
 
-  // Upload the file
   await bucket.upload(filePath, {
     destination: file,
   });
 
-  // Make the file public
-  await file.makePublic();
+  // Generate a signed URL for the uploaded file, valid for 2 hours
+  const options = {
+    version: "v4",
+    action: "read",
+    expires: Date.now() + 2 * 60 * 60 * 1000, // 2 hours
+  };
 
-  // Return the public URL for the file
-  const publicUrl = `https://storage.googleapis.com/${bucketName}/${destination}`;
-  console.log(`${filePath} uploaded to ${publicUrl}`);
-  return publicUrl;
+  try {
+    const [url] = await file.getSignedUrl(options);
+    console.log(`The signed url for ${fullDestination} is ${url}`);
+    return url; // This is the pre-signed URL
+  } catch (error) {
+    console.error("Error creating signed URL:", error);
+    throw error; // Handle error appropriately
+  }
 }
 
 export const handleVideoConvertByRVC = async (req, res, next) => {
@@ -144,7 +153,7 @@ export const handleReplicateWebhook = async (req, res) => {
           responseType: "stream",
         });
 
-        const gcsFileName = `${id}_${model}.mp3`;
+        const gcsFileName = path.join(gcsPath, `${id}_${model}.mp3`);
         const file = storage.bucket(bucketName).file(gcsFileName);
 
         // Pipe the axios stream to the GCS file
@@ -153,15 +162,15 @@ export const handleReplicateWebhook = async (req, res) => {
           .on("finish", async () => {
             console.log(`File uploaded to ${gcsFileName}`);
             // Send notification to deviceToken
-            // const message = {
-            //   token: deviceToken,
-            //   notification: {
-            //     title: "File Ready",
-            //     body: "Your file has been processed and is ready for download.",
-            //   },
-            // };
-            // const responseFCM = await admin.messaging().send(message);
-            // console.log("Successfully sent message:", responseFCM);
+            const message = {
+              token: deviceToken,
+              notification: {
+                title: "File Ready",
+                body: "Your file has been processed and is ready for download.",
+              },
+            };
+            const responseFCM = await admin.messaging().send(message);
+            console.log("Successfully sent message:", responseFCM);
             res.status(200).send("Webhook processed successfully.");
           })
           .on("error", (err) => {
