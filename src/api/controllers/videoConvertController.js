@@ -88,6 +88,7 @@ export const handleVideoConvertByRVC = async (req, res, next) => {
           return;
         }
         const model = params.model || "Squidward";
+        const version = params.version || process.env.REPLICATE_VERSION;
 
         const data = {
           deviceId: params.deviceId,
@@ -95,6 +96,7 @@ export const handleVideoConvertByRVC = async (req, res, next) => {
           model: model,
           title: info.title,
           videoId: info.id,
+          version: version,
         };
         await saveDataToDatabase(data);
         const gcsFileUrl = await uploadFileToGCS(outputPath, fileName);
@@ -104,7 +106,7 @@ export const handleVideoConvertByRVC = async (req, res, next) => {
         console.log(`Local file ${outputPath} deleted`);
 
         await replicate.predictions.create({
-          version: process.env.REPLICATE_VERSION,
+          version: version,
           input: {
             song_input: gcsFileUrl,
             rvc_model: model,

@@ -14,6 +14,7 @@ model VideoConvert {
   model       String?
   title       String?
   videoId     String
+  version     String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
