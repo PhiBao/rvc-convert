@@ -93,25 +93,23 @@ export const handleVideoConvertByRVC = async (req, res, next) => {
         const data = {
           deviceId: params.deviceId,
           deviceToken: params.deviceToken,
-          model: model,
           title: info.title,
           videoId: info.id,
           version: version,
         };
-        await saveDataToDatabase(data);
+        const record = await saveDataToDatabase(data);
         const gcsFileUrl = await uploadFileToGCS(outputPath, fileName);
 
         // Once the file is uploaded, delete the local file
         fs.unlinkSync(outputPath);
         console.log(`Local file ${outputPath} deleted`);
+        let input = params.input;
+        input["song_input"] = gcsFileUrl;
 
         await replicate.predictions.create({
           version: version,
-          input: {
-            song_input: gcsFileUrl,
-            rvc_model: model,
-          },
-          webhook: `${process.env.APP_DOMAIN}/webhooks/replicate?id=${info.id}&model=${model}&deviceToken=${params.deviceToken}`,
+          input: input,
+          webhook: `${process.env.APP_DOMAIN}/webhooks/replicate?id=${record.id}`,
           webhook_events_filter: ["completed"],
         });
         success = true;
@@ -143,7 +141,7 @@ async function saveDataToDatabase(data) {
 export const handleReplicateWebhook = async (req, res) => {
   try {
     const data = req.body; // Webhook data sent by Replicate
-    const { id, model, deviceToken } = req.query;
+    const { id } = req.query;
 
     switch (data.status) {
       case "succeeded":
@@ -155,17 +153,30 @@ export const handleReplicateWebhook = async (req, res) => {
           responseType: "stream",
         });
 
-        const gcsFileName = path.join(gcsPath, `${id}_${model}.mp3`);
+        const gcsFileName = path.join(gcsPath, `${data.id}.mp3`);
         const file = storage.bucket(bucketName).file(gcsFileName);
 
         // Pipe the axios stream to the GCS file
         response.data
           .pipe(file.createWriteStream())
           .on("finish", async () => {
-            console.log(`File uploaded to ${gcsFileName}`);
+            const gcsFile = storage.bucket(bucketName).file(gcsFileName);
+            const [gcsFileMetadata] = await gcsFile.getMetadata();
+            const gcsFileUrl = gcsFileMetadata.mediaLink;
+            console.log(`File uploaded to ${gcsFileUrl}`);
+
+            const record = await prisma.videoConvert.update({
+              where: {
+                id: parseInt(id),
+              },
+              data: {
+                input: data.input,
+                output: gcsFileUrl,
+              },
+            });
             // Send notification to deviceToken
             const message = {
-              token: deviceToken,
+              token: record.deviceToken,
               notification: {
                 title: "File Ready",
                 body: "Your file has been processed and is ready for download.",

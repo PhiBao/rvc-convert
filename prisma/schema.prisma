@@ -11,10 +11,11 @@ model VideoConvert {
   id          Int      @id @default(autoincrement())
   deviceId    String
   deviceToken String
-  model       String?
   title       String?
   videoId     String
   version     String?
+  input       Json?
+  output      String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
