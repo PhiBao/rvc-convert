@@ -244,7 +244,7 @@ export const getVideoConvertList = async (req, res) => {
     const videoConvertsResponse = await Promise.all(
       videoConverts.map(async (videoConvert) => {
         if (videoConvert.status === "successfully") {
-          const url = getPresignedUrl(videoConvert.id);
+          const url = await getPresignedUrl(videoConvert.id);
           return { ...videoConvert, output: url };
         } else {
           return videoConvert;
@@ -270,7 +270,7 @@ export const getVideoConvert = async (req, res) => {
     });
 
     if (video.status == "successfully") {
-      video["output"] = getPresignedUrl(video.id);
+      video["output"] = await getPresignedUrl(video.id);
     }
 
     res.json(video);
