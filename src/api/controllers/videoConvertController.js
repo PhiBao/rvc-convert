@@ -75,10 +75,20 @@ export const handleVideoConvertByRVC = async (req, res, next) => {
   getYoutubeVideoInfo(params.url).then(async (info) => {
     try {
       const outputDir = process.env.OUTPUT_DIR;
-      const fileName = `${info.id}.mp3`;
+      const version = params.version || process.env.REPLICATE_VERSION;
+
+      const data = {
+        deviceId: params.deviceId,
+        deviceToken: params.deviceToken,
+        title: info.title,
+        videoId: info.id,
+        version: version,
+        status: "processing",
+      };
+      const record = await saveDataToDatabase(data);
+      const fileName = `${record.id}.mp3`;
       const outputPath = path.join(outputDir, fileName);
       const command = `yt-dlp --extract-audio --audio-format mp3 -o '${outputPath}' '${params.url}'`;
-      let success = false;
 
       try {
         const { stderr } = await exec(command);
@@ -87,17 +97,7 @@ export const handleVideoConvertByRVC = async (req, res, next) => {
           console.error(`stderr: ${stderr}`);
           return;
         }
-        const model = params.model || "Squidward";
-        const version = params.version || process.env.REPLICATE_VERSION;
 
-        const data = {
-          deviceId: params.deviceId,
-          deviceToken: params.deviceToken,
-          title: info.title,
-          videoId: info.id,
-          version: version,
-        };
-        const record = await saveDataToDatabase(data);
         const gcsFileUrl = await uploadFileToGCS(outputPath, fileName);
 
         // Once the file is uploaded, delete the local file
@@ -106,18 +106,26 @@ export const handleVideoConvertByRVC = async (req, res, next) => {
         let input = params.input;
         input["song_input"] = gcsFileUrl;
 
-        await replicate.predictions.create({
+        const prediction = await replicate.predictions.create({
           version: version,
           input: input,
           webhook: `${process.env.APP_DOMAIN}/webhooks/replicate?id=${record.id}`,
           webhook_events_filter: ["completed"],
         });
-        success = true;
+        const cancelUrl = prediction.urls?.cancel;
+        await prisma.videoConvert.update({
+          where: {
+            id: parseInt(record.id),
+          },
+          data: {
+            cancelUrl: cancelUrl,
+          },
+        });
+        res.json({ ok: true, cancelUrl: cancelUrl });
       } catch (error) {
+        res.json({ ok: false, message: error.message });
         console.error(`Error: ${error.message}`);
       }
-
-      res.json({ ok: success });
     } catch (error) {
       next(error);
     }
@@ -153,25 +161,20 @@ export const handleReplicateWebhook = async (req, res) => {
           responseType: "stream",
         });
 
-        const gcsFileName = path.join(gcsPath, `${data.id}.mp3`);
+        const gcsFileName = path.join(gcsPath, `${id}.mp3`);
         const file = storage.bucket(bucketName).file(gcsFileName);
 
         // Pipe the axios stream to the GCS file
         response.data
           .pipe(file.createWriteStream())
           .on("finish", async () => {
-            const gcsFile = storage.bucket(bucketName).file(gcsFileName);
-            const [gcsFileMetadata] = await gcsFile.getMetadata();
-            const gcsFileUrl = gcsFileMetadata.mediaLink;
-            console.log(`File uploaded to ${gcsFileUrl}`);
-
             const record = await prisma.videoConvert.update({
               where: {
                 id: parseInt(id),
               },
               data: {
                 input: data.input,
-                output: gcsFileUrl,
+                status: "successfully",
               },
             });
             // Send notification to deviceToken
@@ -192,6 +195,15 @@ export const handleReplicateWebhook = async (req, res) => {
             res.status(500).send("Failed to upload file");
           });
         break;
+      case "failed":
+        await prisma.videoConvert.update({
+          where: {
+            id: parseInt(id),
+          },
+          data: {
+            status: "error",
+          },
+        });
       default:
         console.log("Webhook is listening...");
     }
@@ -200,6 +212,21 @@ export const handleReplicateWebhook = async (req, res) => {
     res.status(500).send("Internal Server Error");
   }
 };
+
+async function getPresignedUrl(fileName, hours = 4) {
+  const bucket = storage.bucket(bucketName);
+  const fullDestination = path.join(gcsPath, `${fileName}.mp3`);
+  const file = bucket.file(fullDestination);
+  const options = {
+    version: "v4",
+    action: "read",
+    expires: Date.now() + hours * 60 * 60 * 1000,
+  };
+
+  const [url] = await file.getSignedUrl(options);
+
+  return url;
+}
 
 export const getVideoConvertList = async (req, res) => {
   try {
@@ -214,7 +241,39 @@ export const getVideoConvertList = async (req, res) => {
       },
     });
 
-    res.json(videoConverts);
+    const videoConvertsResponse = await Promise.all(
+      videoConverts.map(async (videoConvert) => {
+        if (videoConvert.status === "successfully") {
+          const url = getPresignedUrl(videoConvert.id);
+          return { ...videoConvert, output: url };
+        } else {
+          return videoConvert;
+        }
+      })
+    );
+
+    res.json(videoConvertsResponse);
+  } catch (error) {
+    console.error("Failed to fetch video converts:", error);
+    res.status(500).send("Internal Server Error");
+  }
+};
+
+export const getVideoConvert = async (req, res) => {
+  try {
+    const videoId = req.params.id;
+
+    let video = await prisma.videoConvert.findUnique({
+      where: {
+        id: parseInt(videoId),
+      },
+    });
+
+    if (video.status == "successfully") {
+      video["output"] = getPresignedUrl(video.id);
+    }
+
+    res.json(video);
   } catch (error) {
     console.error("Failed to fetch video converts:", error);
     res.status(500).send("Internal Server Error");

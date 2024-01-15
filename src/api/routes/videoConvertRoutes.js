@@ -4,5 +4,6 @@ import * as videoConvertController from "../controllers/videoConvertController.j
 
 router.post("/", videoConvertController.handleVideoConvertByRVC);
 router.get("/", videoConvertController.getVideoConvertList);
+router.get("/:id", videoConvertController.getVideoConvert);
 
 export default router;
