@@ -84,6 +84,7 @@ export const handleVideoConvertByRVC = async (req, res, next) => {
         videoId: info.id,
         version: version,
         status: "processing",
+        iconUrl: params["icon/image"],
       };
       const record = await saveDataToDatabase(data);
       const fileName = `${record.id}.mp3`;
@@ -269,7 +270,7 @@ export const getVideoConvert = async (req, res) => {
       },
     });
 
-    if (video.status == "successfully") {
+    if (video?.status == "successfully") {
       video["output"] = await getPresignedUrl(video.id);
     }
 
