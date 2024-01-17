@@ -66,6 +66,20 @@ async function uploadFileToGCS(filePath, destination) {
   }
 }
 
+async function deleteFileToGCS(destination) {
+  const bucket = storage.bucket(bucketName);
+  const fullDestination = path.join(gcsPath, destination);
+  const file = bucket.file(fullDestination);
+
+  try {
+    await file.delete();
+    console.log(`File ${fullDestination} deleted.`);
+  } catch (error) {
+    console.error("Error deleting file:", error);
+    throw error; // Handle error appropriately
+  }
+}
+
 export const handleVideoConvertByRVC = async (req, res, next) => {
   const params = req.body;
   if (!params.url) {
@@ -272,6 +286,28 @@ export const getVideoConvert = async (req, res) => {
 
     if (video?.status == "successfully") {
       video["output"] = await getPresignedUrl(video.id);
+    }
+
+    res.json(video);
+  } catch (error) {
+    console.error("Failed to fetch video converts:", error);
+    res.status(500).send("Internal Server Error");
+  }
+};
+
+export const removeVideoConvert = async (req, res) => {
+  try {
+    const videoId = req.params.id;
+
+    let video = await prisma.videoConvert.delete({
+      where: {
+        id: parseInt(videoId),
+      },
+    });
+
+    if (video?.status == "successfully") {
+      const fileName = `${video.id}.mp3`;
+      video["output"] = await deleteFileToGCS(fileName);
     }
 
     res.json(video);
