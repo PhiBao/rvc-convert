@@ -98,7 +98,8 @@ export const handleVideoConvertByRVC = async (req, res, next) => {
         videoId: info.id,
         version: version,
         status: "processing",
-        iconUrl: params["icon/image"],
+        iconUrl: params.image,
+        modelName: params.modelName,
       };
       const record = await saveDataToDatabase(data);
       const fileName = `${record.id}.mp3`;
@@ -299,6 +300,19 @@ export const removeVideoConvert = async (req, res) => {
   try {
     const videoId = req.params.id;
 
+    // Check if the video record exists before attempting to delete
+    const existingVideo = await prisma.videoConvert.findUnique({
+      where: {
+        id: parseInt(videoId),
+      },
+    });
+
+    if (!existingVideo) {
+      // If the video record does not exist, return a 404 Not Found
+      return res.status(404).send("Video not found");
+    }
+
+    // Proceed with deletion since the video record exists
     let video = await prisma.videoConvert.delete({
       where: {
         id: parseInt(videoId),
