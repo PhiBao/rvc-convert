@@ -197,8 +197,11 @@ export const handleReplicateWebhook = async (req, res) => {
             const message = {
               token: record.deviceToken,
               notification: {
-                title: "File Ready",
-                body: "Your file has been processed and is ready for download.",
+                title: `${record.modelName} Cover`,
+                body: `${record.title} has been processed. Let's enjoy it!`,
+              },
+              data: {
+                image: record.iconUrl,
               },
             };
             const responseFCM = await admin.messaging().send(message);
