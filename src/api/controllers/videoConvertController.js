@@ -200,7 +200,9 @@ export const handleReplicateWebhook = async (req, res) => {
                 title: `${record.modelName} Cover`,
                 body: `${record.title} has been processed. Let's enjoy it!`,
               },
-              data: JSON.stringify(record),
+              data: {
+                object: JSON.stringify(record),
+              },
             };
             const responseFCM = await admin.messaging().send(message);
             console.log("Successfully sent message:", responseFCM);
