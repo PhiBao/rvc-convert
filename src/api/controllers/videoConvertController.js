@@ -129,7 +129,7 @@ export const handleVideoConvertByRVC = async (req, res, next) => {
           webhook_events_filter: ["completed"],
         });
         const cancelUrl = prediction.urls?.cancel;
-        await prisma.videoConvert.update({
+        const object = await prisma.videoConvert.update({
           where: {
             id: parseInt(record.id),
           },
@@ -137,9 +137,9 @@ export const handleVideoConvertByRVC = async (req, res, next) => {
             cancelUrl: cancelUrl,
           },
         });
-        res.json({ ok: true, cancelUrl: cancelUrl });
+        res.json(object);
       } catch (error) {
-        res.json({ ok: false, message: error.message });
+        res.status(403).json({ ok: false, message: error.message });
         console.error(`Error: ${error.message}`);
       }
     } catch (error) {
