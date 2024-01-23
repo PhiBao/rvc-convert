@@ -129,7 +129,7 @@ export const handleVideoConvertByRVC = async (req, res, next) => {
           webhook_events_filter: ["completed"],
         });
         const cancelUrl = prediction.urls?.cancel;
-        const object = await prisma.videoConvert.update({
+        await prisma.videoConvert.update({
           where: {
             id: parseInt(record.id),
           },
@@ -137,9 +137,9 @@ export const handleVideoConvertByRVC = async (req, res, next) => {
             cancelUrl: cancelUrl,
           },
         });
-        res.json(object);
+        res.json({ ok: true, cancelUrl: cancelUrl });
       } catch (error) {
-        res.status(403).json({ ok: false, message: error.message });
+        res.json({ ok: false, message: error.message });
         console.error(`Error: ${error.message}`);
       }
     } catch (error) {
@@ -200,9 +200,7 @@ export const handleReplicateWebhook = async (req, res) => {
                 title: `${record.modelName} Cover`,
                 body: `${record.title} has been processed. Let's enjoy it!`,
               },
-              data: {
-                image: record.iconUrl,
-              },
+              data: record,
             };
             const responseFCM = await admin.messaging().send(message);
             console.log("Successfully sent message:", responseFCM);
