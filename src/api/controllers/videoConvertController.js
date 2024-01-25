@@ -33,6 +33,7 @@ async function getYoutubeVideoInfo(url) {
     return {
       id: videoInfo.id,
       title: videoInfo.title,
+      duration: videoInfo.duration,
     };
   } catch (error) {
     console.error(`Error: ${error.message}`);
@@ -100,6 +101,7 @@ export const handleVideoConvertByRVC = async (req, res, next) => {
         status: "processing",
         iconUrl: params.image,
         modelName: params.modelName,
+        duration: info.duration,
       };
       const record = await saveDataToDatabase(data);
       const fileName = `${record.id}.mp3`;
@@ -215,7 +217,7 @@ export const handleReplicateWebhook = async (req, res) => {
           });
         break;
       case "failed":
-        await prisma.videoConvert.update({
+        const record = await prisma.videoConvert.update({
           where: {
             id: parseInt(id),
           },
@@ -223,6 +225,20 @@ export const handleReplicateWebhook = async (req, res) => {
             status: "error",
           },
         });
+
+        // Send notification to deviceToken
+        const message = {
+          token: record.deviceToken,
+          notification: {
+            title: `${record.modelName} Cover`,
+            body: `${record.title} process failed`,
+          },
+          data: {
+            error: data.error,
+          },
+        };
+        const responseFCM = await admin.messaging().send(message);
+        console.log("Successfully sent message:", responseFCM);
       default:
         console.log("Webhook is listening...");
     }

@@ -19,6 +19,7 @@ model VideoConvert {
   status      String?
   iconUrl     String?
   modelName   String?
+  duration    Int?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
