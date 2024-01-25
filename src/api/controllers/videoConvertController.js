@@ -234,7 +234,7 @@ export const handleReplicateWebhook = async (req, res) => {
             body: `${record.title} process failed`,
           },
           data: {
-            error: data.error,
+            error: JSON.stringify(data.error),
           },
         };
         const responseFCM = await admin.messaging().send(message);
