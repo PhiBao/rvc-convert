@@ -239,6 +239,9 @@ export const handleReplicateWebhook = async (req, res) => {
         };
         const responseFCM = await admin.messaging().send(message);
         console.log("Successfully sent message:", responseFCM);
+
+        res.status(403).send("Replicate process error");
+        break;
       default:
         console.log("Webhook is listening...");
     }
