@@ -244,6 +244,7 @@ export const handleReplicateWebhook = async (req, res) => {
         break;
       default:
         console.log("Webhook is listening...");
+        break;
     }
   } catch (error) {
     console.error("Error handling Replicate webhook:", error);
