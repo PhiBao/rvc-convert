@@ -217,28 +217,35 @@ export const handleReplicateWebhook = async (req, res) => {
           });
         break;
       case "failed":
-        const record = await prisma.videoConvert.update({
+        let record = await prisma.videoConvert.findUnique({
           where: {
             id: parseInt(id),
           },
-          data: {
-            status: "error",
-          },
         });
 
-        // Send notification to deviceToken
-        const message = {
-          token: record.deviceToken,
-          notification: {
-            title: `${record.modelName} Cover`,
-            body: `${record.title} process failed`,
-          },
-          data: {
-            error: JSON.stringify(data.error),
-          },
-        };
-        const responseFCM = await admin.messaging().send(message);
-        console.log("Successfully sent message:", responseFCM);
+        if (record?.status !== "error") {
+          record = await prisma.videoConvert.update({
+            where: {
+              id: parseInt(id),
+            },
+            data: {
+              status: "error",
+            },
+          });
+          // Send notification to deviceToken
+          const message = {
+            token: record.deviceToken,
+            notification: {
+              title: `${record.modelName} Cover`,
+              body: `${record.title} process failed`,
+            },
+            data: {
+              error: JSON.stringify(data.error),
+            },
+          };
+          const responseFCM = await admin.messaging().send(message);
+          console.log("Successfully sent message:", responseFCM);
+        }
 
         res.status(403).send("Replicate process error");
         break;
