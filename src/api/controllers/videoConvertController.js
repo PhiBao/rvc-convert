@@ -21,6 +21,7 @@ const storage = new Storage({
 });
 const bucketName = process.env.BUCKET_NAME;
 const gcsPath = process.env.GCS_PATH;
+const discordWebhookUrl = process.env.DISCORD_WEBHOOK_URL;
 
 const replicate = new Replicate({ auth: process.env.REPLICATE_API_TOKEN });
 const exec = promisify(execCallback);
@@ -36,7 +37,8 @@ async function getYoutubeVideoInfo(url) {
       duration: videoInfo.duration,
     };
   } catch (error) {
-    console.error(`Error: ${error.message}`);
+    const errorMsg = `Error get yt video info: ${error.message}\nStack trace: ${error.stack}`;
+    handleError(errorMsg);
     return null;
   }
 }
@@ -62,7 +64,8 @@ async function uploadFileToGCS(filePath, destination) {
     console.log(`The signed url for ${fullDestination} is ${url}`);
     return url; // This is the pre-signed URL
   } catch (error) {
-    console.error("Error creating signed URL:", error);
+    const errorMsg = `Error creating signed URL: ${error.message}\nStack trace: ${error.stack}`;
+    handleError(errorMsg);
     throw error; // Handle error appropriately
   }
 }
@@ -76,7 +79,8 @@ async function deleteFileToGCS(destination) {
     await file.delete();
     console.log(`File ${fullDestination} deleted.`);
   } catch (error) {
-    console.error("Error deleting file:", error);
+    const errorMsg = `Error deleting file: ${error.message}\nStack trace: ${error.stack}`;
+    handleError(errorMsg);
     throw error; // Handle error appropriately
   }
 }
@@ -112,7 +116,8 @@ export const handleVideoConvertByRVC = async (req, res, next) => {
         const { stderr } = await exec(command);
 
         if (stderr) {
-          console.error(`stderr: ${stderr}`);
+          const errorMsg = `Error download yt video: ${stderr}`;
+          handleError(errorMsg);
           return;
         }
 
@@ -142,7 +147,8 @@ export const handleVideoConvertByRVC = async (req, res, next) => {
         res.json({ ok: true, cancelUrl: cancelUrl });
       } catch (error) {
         res.json({ ok: false, message: error.message });
-        console.error(`Error: ${error.message}`);
+        const errorMsg = `Error process yt video: ${error.message}\nStack trace: ${error.stack}`;
+        handleError(errorMsg);
       }
     } catch (error) {
       next(error);
@@ -158,8 +164,8 @@ async function saveDataToDatabase(data) {
     console.log("Saved video info:", videoConvert);
     return videoConvert;
   } catch (error) {
-    console.error("Failed to save video info:", error);
-    // Handle or throw error appropriately
+    const errorMsg = `Error save video info: ${error.message}\nStack trace: ${error.stack}`;
+    handleError(errorMsg);
     throw error;
   }
 }
@@ -211,7 +217,8 @@ export const handleReplicateWebhook = async (req, res) => {
             res.status(200).send("Webhook processed successfully.");
           })
           .on("error", (err) => {
-            console.error("Failed to upload file:", err);
+            const errorMsg = `Error upload file: ${err}`;
+            handleError(errorMsg);
             // Handle error appropriately
             res.status(500).send("Failed to upload file");
           });
@@ -247,14 +254,17 @@ export const handleReplicateWebhook = async (req, res) => {
           console.log("Successfully sent message:", responseFCM);
         }
 
-        res.status(403).send("Replicate process error");
+        const errorMsg = `Error Replicate process: ${data.error}`;
+        res.status(403).send(errorMsg);
+        handleError(errorMsg);
         break;
       default:
         console.log("Webhook is listening...");
         break;
     }
   } catch (error) {
-    console.error("Error handling Replicate webhook:", error);
+    const errorMsg = `Error handling Replicate webhook: ${error.message}\nStack trace: ${error.stack}`;
+    handleError(errorMsg);
     res.status(500).send("Internal Server Error");
   }
 };
@@ -300,7 +310,9 @@ export const getVideoConvertList = async (req, res) => {
 
     res.json(videoConvertsResponse);
   } catch (error) {
-    console.error("Failed to fetch video converts:", error);
+    const errorMsg = `Error fetch video converts: ${error.message}\nStack trace: ${error.stack}`;
+    handleError(errorMsg);
+
     res.status(500).send("Internal Server Error");
   }
 };
@@ -321,7 +333,8 @@ export const getVideoConvert = async (req, res) => {
 
     res.json(video);
   } catch (error) {
-    console.error("Failed to fetch video converts:", error);
+    const errorMsg = `Error get video detail: ${error.message}\nStack trace: ${error.stack}`;
+    handleError(errorMsg);
     res.status(500).send("Internal Server Error");
   }
 };
@@ -356,7 +369,17 @@ export const removeVideoConvert = async (req, res) => {
 
     res.json(video);
   } catch (error) {
-    console.error("Failed to fetch video converts:", error);
+    const errorMsg = `Error remove video: ${error.message}\nStack trace: ${error.stack}`;
+    handleError(errorMsg);
     res.status(500).send("Internal Server Error");
   }
+};
+
+const handleError = (errorMsg) => {
+  console.error(errorMsg);
+  axios
+    .post(discordWebhookUrl, {
+      content: errorMsg,
+    })
+    .catch(console.error);
 };
