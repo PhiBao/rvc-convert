@@ -201,19 +201,23 @@ export const handleReplicateWebhook = async (req, res) => {
                 status: "successfully",
               },
             });
-            // Send notification to deviceToken
-            const message = {
-              token: record.deviceToken,
-              notification: {
-                title: `${record.modelName} Cover`,
-                body: `${record.title} has been processed. Let's enjoy it!`,
-              },
-              data: {
-                object: JSON.stringify(record),
-              },
-            };
-            const responseFCM = await admin.messaging().send(message);
-            console.log("Successfully sent message:", responseFCM);
+
+            // Send notification
+            if (record.deviceToken) {
+              const message = {
+                token: record.deviceToken,
+                notification: {
+                  title: `${record.modelName} Cover`,
+                  body: `${record.title} has been processed. Let's enjoy it!`,
+                },
+                data: {
+                  object: JSON.stringify(record),
+                },
+              };
+              const responseFCM = await admin.messaging().send(message);
+              console.log("Successfully sent message:", responseFCM);
+            }
+
             res.status(200).send("Webhook processed successfully.");
           })
           .on("error", (err) => {
