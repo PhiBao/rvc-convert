@@ -28,7 +28,7 @@ const exec = promisify(execCallback);
 
 async function getYoutubeVideoInfo(url) {
   try {
-    const { stdout } = await exec(`yt-dlp -j ${url}`);
+    const { stdout } = await exec(`yt-dlp -j "${url}"`);
     const videoInfo = JSON.parse(stdout);
 
     return {
