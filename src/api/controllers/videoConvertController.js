@@ -115,7 +115,7 @@ export const handleVideoConvertByRVC = async (req, res, next) => {
       try {
         const { stderr } = await exec(command);
 
-        if (stderr) {
+        if (stderr && (stderr.includes("ERROR") || stderr.includes("error"))) {
           const errorMsg = `Error download yt video: ${stderr}`;
           handleError(errorMsg);
           return;
