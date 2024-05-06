@@ -170,19 +170,37 @@ async function saveDataToDatabase(data) {
   }
 }
 
-async function sendFirebaseNotification(record) {
+const successMsg = (record) => {
+  return {
+    token: record.deviceToken,
+    notification: {
+      title: `${record.modelName} Cover`,
+      body: `${record.title} has been processed. Let's enjoy it!`,
+    },
+    data: {
+      object: JSON.stringify(record),
+    },
+  };
+};
+
+const failedMsg = (record) => {
+  return {
+    token: record.deviceToken,
+    notification: {
+      title: `${record.modelName} Cover`,
+      body: `${record.title} process failed`,
+    },
+    data: {
+      error: JSON.stringify(data.error),
+    },
+  };
+};
+
+async function sendFirebaseNotification(record, type = "success") {
   try {
     if (record.deviceToken) {
-      const message = {
-        token: record.deviceToken,
-        notification: {
-          title: `${record.modelName} Cover`,
-          body: `${record.title} has been processed. Let's enjoy it!`,
-        },
-        data: {
-          object: JSON.stringify(record),
-        },
-      };
+      const message =
+        type == "success" ? successMsg(record) : failedMsg(record);
       const responseFCM = await admin.messaging().send(message);
       console.log("Successfully sent message:", responseFCM);
     }
@@ -201,7 +219,11 @@ async function sendFirebaseNotification(record) {
         2
       )}`;
     } else {
-      errorMsg = `Error occurred with send firebase notification:\n${error}`;
+      errorMsg = `Error occurred with send firebase notification:\n${error}\nRecord: ${JSON.stringify(
+        record,
+        null,
+        2
+      )}`;
     }
 
     handleError(errorMsg);
@@ -268,24 +290,13 @@ export const handleReplicateWebhook = async (req, res) => {
               status: "error",
             },
           });
-          // Send notification to deviceToken
-          const message = {
-            token: record.deviceToken,
-            notification: {
-              title: `${record.modelName} Cover`,
-              body: `${record.title} process failed`,
-            },
-            data: {
-              error: JSON.stringify(data.error),
-            },
-          };
-          const responseFCM = await admin.messaging().send(message);
-          console.log("Successfully sent message:", responseFCM);
+
+          await sendFirebaseNotification(record, "failed");
         }
 
         const errorMsg = `Error Replicate process: ${data.error}`;
-        res.status(403).send(errorMsg);
         handleError(errorMsg);
+        res.status(200).send(errorMsg);
         break;
       default:
         console.log("Webhook is listening...");
