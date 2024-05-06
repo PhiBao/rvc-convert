@@ -183,7 +183,7 @@ const successMsg = (record) => {
   };
 };
 
-const failedMsg = (record) => {
+const failedMsg = (record, error) => {
   return {
     token: record.deviceToken,
     notification: {
@@ -191,16 +191,14 @@ const failedMsg = (record) => {
       body: `${record.title} process failed`,
     },
     data: {
-      error: JSON.stringify(data.error),
+      error: JSON.stringify(error),
     },
   };
 };
 
-async function sendFirebaseNotification(record, type = "success") {
+async function sendFirebaseNotification(record, message) {
   try {
     if (record.deviceToken) {
-      const message =
-        type == "success" ? successMsg(record) : failedMsg(record);
       const responseFCM = await admin.messaging().send(message);
       console.log("Successfully sent message:", responseFCM);
     }
@@ -263,7 +261,7 @@ export const handleReplicateWebhook = async (req, res) => {
             });
 
             // Send notification
-            await sendFirebaseNotification(record);
+            await sendFirebaseNotification(record, successMsg(record));
 
             res.status(200).send("Webhook processed successfully.");
           })
@@ -291,7 +289,7 @@ export const handleReplicateWebhook = async (req, res) => {
             },
           });
 
-          await sendFirebaseNotification(record, "failed");
+          await sendFirebaseNotification(record, failedMsg(record, data.error));
         }
 
         const errorMsg = `Error Replicate process: ${data.error}`;
