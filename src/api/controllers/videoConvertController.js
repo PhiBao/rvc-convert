@@ -170,6 +170,44 @@ async function saveDataToDatabase(data) {
   }
 }
 
+async function sendFirebaseNotification(record) {
+  try {
+    if (record.deviceToken) {
+      const message = {
+        token: record.deviceToken,
+        notification: {
+          title: `${record.modelName} Cover`,
+          body: `${record.title} has been processed. Let's enjoy it!`,
+        },
+        data: {
+          object: JSON.stringify(record),
+        },
+      };
+      const responseFCM = await admin.messaging().send(message);
+      console.log("Successfully sent message:", responseFCM);
+    }
+  } catch (error) {
+    let errorMsg = "";
+    if (
+      error.code === "messaging/invalid-registration-token" ||
+      error.code === "messaging/registration-token-not-registered"
+    ) {
+      errorMsg =
+        "The device token is invalid or not registered: " + record.deviceToken;
+    } else if (error.code === "messaging/authentication-error") {
+      errorMsg = `There was an authentication error when trying to send a message:\n${JSON.stringify(
+        record,
+        null,
+        2
+      )}`;
+    } else {
+      errorMsg = `Error occurred with send firebase notification:\n${error}`;
+    }
+
+    handleError(errorMsg);
+  }
+}
+
 export const handleReplicateWebhook = async (req, res) => {
   try {
     const data = req.body; // Webhook data sent by Replicate
@@ -203,20 +241,7 @@ export const handleReplicateWebhook = async (req, res) => {
             });
 
             // Send notification
-            if (record.deviceToken) {
-              const message = {
-                token: record.deviceToken,
-                notification: {
-                  title: `${record.modelName} Cover`,
-                  body: `${record.title} has been processed. Let's enjoy it!`,
-                },
-                data: {
-                  object: JSON.stringify(record),
-                },
-              };
-              const responseFCM = await admin.messaging().send(message);
-              console.log("Successfully sent message:", responseFCM);
-            }
+            await sendFirebaseNotification(record);
 
             res.status(200).send("Webhook processed successfully.");
           })
