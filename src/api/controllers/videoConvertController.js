@@ -233,6 +233,15 @@ export const handleReplicateWebhook = async (req, res) => {
     const data = req.body; // Webhook data sent by Replicate
     const { id } = req.query;
 
+    if (!id) {
+      const errorMsg = `Replicate webhook does not send id back: ${JSON.stringify(
+        data
+      )}`;
+      handleError(errorMsg);
+      res.status(200).send(errorMsg);
+      return;
+    }
+
     switch (data.status) {
       case "succeeded":
         const outputFileUrl = data.output;
