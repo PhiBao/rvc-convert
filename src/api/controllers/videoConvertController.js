@@ -233,15 +233,6 @@ export const handleReplicateWebhook = async (req, res) => {
     const data = req.body; // Webhook data sent by Replicate
     const { id } = req.query;
 
-    if (!id) {
-      const errorMsg = `Replicate webhook does not send id back: ${JSON.stringify(
-        data
-      )}`;
-      handleError(errorMsg);
-      res.status(200).send(errorMsg);
-      return;
-    }
-
     switch (data.status) {
       case "succeeded":
         const outputFileUrl = data.output;
@@ -287,8 +278,9 @@ export const handleReplicateWebhook = async (req, res) => {
             id: parseInt(id),
           },
         });
+        let errorMsg = `Replicate process response failed: ${data.error}`;
 
-        if (record?.status !== "error") {
+        if (record && record.status !== "error") {
           record = await prisma.videoConvert.update({
             where: {
               id: parseInt(id),
@@ -299,9 +291,12 @@ export const handleReplicateWebhook = async (req, res) => {
           });
 
           await sendFirebaseNotification(record, failedMsg(record, data.error));
+        } else {
+          errorMsg = `Cannot find record in replicate response: ${JSON.stringify(
+            data
+          )}`;
         }
 
-        const errorMsg = `Error Replicate process: ${data.error}`;
         handleError(errorMsg);
         res.status(200).send(errorMsg);
         break;
